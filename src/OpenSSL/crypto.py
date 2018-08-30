@@ -1128,7 +1128,8 @@ class X509(object):
 
     def set_version(self, version):
         """
-        Set the version number of the certificate.
+        Set the version number of the certificate. Note that the
+        version value is zero-based, eg. a value of 0 is V1.
 
         :param version: The version number of the certificate.
         :type version: :py:class:`int`
@@ -1607,7 +1608,16 @@ class X509Store(object):
         if not isinstance(cert, X509):
             raise TypeError()
 
-        _openssl_assert(_lib.X509_STORE_add_cert(self._store, cert._x509) != 0)
+        # As of OpenSSL 1.1.0i adding the same cert to the store more than
+        # once doesn't cause an error. Accordingly, this code now silences
+        # the error for OpenSSL < 1.1.0i as well.
+        if _lib.X509_STORE_add_cert(self._store, cert._x509) == 0:
+            code = _lib.ERR_peek_error()
+            err_reason = _lib.ERR_GET_REASON(code)
+            _openssl_assert(
+                err_reason == _lib.X509_R_CERT_ALREADY_IN_HASH_TABLE
+            )
+            _lib.ERR_clear_error()
 
     def add_crl(self, crl):
         """
@@ -1942,7 +1952,7 @@ class Revoked(object):
     """
     A certificate revocation.
     """
-    # http://www.openssl.org/docs/apps/x509v3_config.html#CRL_distribution_points_
+    # https://www.openssl.org/docs/manmaster/man5/x509v3_config.html#CRL-distribution-points
     # which differs from crl_reasons of crypto/x509v3/v3_enum.c that matches
     # OCSP_crl_reason_str.  We use the latter, just like the command line
     # program.
